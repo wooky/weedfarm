@@ -1,0 +1,83 @@
+esphome:
+  name: weedfarm
+  friendly_name: weedfarm
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "4mRGXYype+4q7gAbKRFW8Hix1Xo0yuAHYzzZU19UVg4="
+
+ota:
+  - platform: esphome
+    password: "3ae039b729dfc3e085b39f2f15a7a655"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Weedfarm Fallback Hotspot"
+    password: "u61bGwuaAAEC"
+
+captive_portal:
+
+web_server:
+
+# --- Time source (SNTP) ---
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: America/Edmonton
+    on_time: 
+      - seconds: 0
+        minutes: /30
+        then: 
+          - switch.turn_on: garden_pump
+          - delay: 60s
+          - switch.turn_off: garden_pump
+      - seconds: 0
+        minutes: '*'
+        then: 
+          - lambda: |-
+              auto now = id(sntp_time).now();
+
+              // Light ON between 09:00 and 23:00
+              if (now.hour >= 9 && now.hour < 23) {
+                id(garden_light).turn_on();
+              } else {
+                id(garden_light).turn_off();
+              }
+
+# --- Light Relay on GPIO3 ---
+switch:
+  - platform: gpio
+    id: garden_light
+    name: "Garden Light"
+    pin: GPIO3
+
+  # Pump Relay on GPIO0
+  - platform: gpio
+    id: garden_pump
+    name: "Garden Pump"
+    pin: GPIO0
+
+text_sensor:
+  - platform: template
+    name: "Current Time"
+    id: current_time_display
+    update_interval: 30s
+    lambda: |-
+      auto now = id(sntp_time).now();
+      if (!now.is_valid()) return {"Time not synced"};
+      char buffer[32];
+      now.strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S");
+      return {buffer};
