@@ -1,6 +1,11 @@
 esphome:
   name: weedfarm
   friendly_name: weedfarm
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(first_sync_after_boot) = true;
 
 esp32:
   board: esp32-c3-devkitm-1
@@ -14,6 +19,7 @@ logger:
 api:
   encryption:
     key: "4mRGXYype+4q7gAbKRFW8Hix1Xo0yuAHYzzZU19UVg4="
+  reboot_timeout: 0s
 
 ota:
   - platform: esphome
@@ -56,6 +62,62 @@ time:
               } else {
                 id(garden_light).turn_off();
               }
+    on_time_sync:
+      then:
+        - lambda: |-
+            if (!id(first_sync_after_boot)) {
+              // Not the first sync after boot — ignore
+              return;
+            }
+            id(first_sync_after_boot) = false;
+
+            // Format timestamp
+            char new_entry[32];
+            time_t now = id(sntp_time).now().timestamp;
+            strftime(new_entry, sizeof(new_entry), "%Y-%m-%d %H:%M:%S", localtime(&now));
+
+            // Copy existing buffer into a working array
+            char buffer[256];
+            strncpy(buffer, id(boot_times_raw), sizeof(buffer));
+            buffer[255] = '\0';
+
+            // Split into lines
+            const int MAX_LINES = 10;
+            const char *lines[MAX_LINES];
+            int count = 0;
+
+            char *p = buffer;
+            while (count < MAX_LINES && p && *p) {
+              lines[count++] = p;
+              char *nl = strchr(p, '\n');
+              if (!nl) break;
+              *nl = '\0';
+              p = nl + 1;
+            }
+
+            // Add new entry
+            if (count < MAX_LINES) {
+              lines[count++] = new_entry;
+            } else {
+              // Shift up to make room
+              for (int i = 1; i < MAX_LINES; i++) {
+                lines[i - 1] = lines[i];
+              }
+              lines[MAX_LINES - 1] = new_entry;
+            }
+
+            // Rebuild newline-delimited string
+            char out[256];
+            out[0] = '\0';
+            for (int i = 0; i < count; i++) {
+              strncat(out, lines[i], sizeof(out) - strlen(out) - 1);
+              if (i + 1 < count)
+                strncat(out, "\n", sizeof(out) - strlen(out) - 1);
+            }
+
+            // Save back to persistent global
+            strncpy(id(boot_times_raw), out, sizeof(id(boot_times_raw)));
+            id(boot_times_raw)[255] = '\0';
 
 # --- Light Relay on GPIO3 ---
 switch:
@@ -81,3 +143,17 @@ text_sensor:
       char buffer[32];
       now.strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S");
       return {buffer};
+  - platform: template
+    name: "Boot Times"
+    lambda: |-
+      return std::string(id(boot_times_raw));
+
+globals:
+  - id: boot_times_raw
+    type: char[256]
+    initial_value: ''
+    restore_value: True
+  - id: first_sync_after_boot
+    type: bool
+    restore_value: no
+    initial_value: "true"
