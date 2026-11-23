@@ -13,7 +13,26 @@ weedfarm is a low-cost replacement for the controller PCB of a VegeHome Jardin P
 
 ## Repository state
 
-The `master` branch currently has only the README. No build system, tests, or lint configuration exists yet, so there are no commands to document. Update this file once tooling lands.
+Only `pcb/` has content so far. `firmware/` and `android/` don't exist yet.
+
+### PCB (KiCad 10)
+
+`pcb/weedfarm/weedfarm.kicad_sch` and `.kicad_pcb` are generated, so never hand-edit them. The single source of truth is `pcb/tools/design.py`: each part's symbol, footprint, pin-to-net map, schematic position, and board placement. `pcb/tools/generate.py` reads it and does the following:
+- Flattens the KiCad library symbols and embeds them in the schematic.
+- Connects every pin with a short wire and a net label. Unlisted pins get no-connect flags.
+- Builds the board through the `pcbnew` Python module, naming nets to match the schematic (`/NET`, and `unconnected-(...)` for no-connect pins) so the parity check passes.
+
+```sh
+python3 pcb/tools/generate.py                                   # regenerate both files
+cd pcb/weedfarm
+kicad-cli sch erc weedfarm.kicad_sch                            # expect only library-table warnings
+kicad-cli pcb drc --schematic-parity weedfarm.kicad_pcb         # expect only unconnected items (board is unrouted) and silkscreen warnings
+kicad-cli pcb render --side top -o /tmp/top.png weedfarm.kicad_pcb
+```
+
+The ERC/DRC "library not in configuration" warnings appear when KiCad's global library tables haven't been set up (for example, KiCad has never been launched). They're harmless.
+
+The final design is meant to be finished in EasyEDA and built and assembled by JLCPCB. `pcb/README.md` records the hardware decisions and open items.
 
 The README specifies this layout:
 
