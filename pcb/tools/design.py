@@ -60,66 +60,62 @@ PARTS = [
     res("R2", "1k", "FB", GND, sch=(139.7, 83.82), pcb=(52, 24, 90)),
 
     # ---------------------------------------------------- USB / phone charging
-    # D3 keeps a PC's VBUS from back-feeding the buck during DFU updates.
+    # The board is the USB host and the phone is a normal USB device (Android
+    # Open Accessory), so the phone charges from VBUS like on any charger.
+    # Without BC1.2 CDP signaling, expect only about 500 mA; see pcb/README.md.
+    # D3 drops the 5.3V buck output to about 5V on VBUS and stops anything
+    # plugged into the port from back-feeding the buck.
     part("D3", "Device:D_Schottky", "SS34", FP_SMA,
          {"1": VBUS, "2": V5}, sch=(25.4, 129.54), pcb=(74, 22, 90), lcsc="C8678"),
-    part("J2", "Connector:USB_B_Micro", "Micro-USB (phone / DFU)",
-         "Connector_USB:USB_Micro-B_Molex-105017-0001",
-         {"1": VBUS, "2": "USB_DM", "3": "USB_DP", "4": "USB_ID", "5": GND, "SH": GND},
-         sch=(50.8, 129.54), pcb=(92, 6, 180)),
-    # RID_A: tells an OTG phone it may charge while in host mode. Only works
-    # if the cable passes ID through; see pcb/README.md.
-    res("R3", "124k", "USB_ID", GND, sch=(76.2, 129.54), pcb=(84, 14, 0)),
+    part("J2", "Connector:USB_A", "USB-A (phone, host port)",
+         "Connector_USB:USB_A_Molex_67643_Horizontal",
+         {"1": VBUS, "2": "USB_DM", "3": "USB_DP", "4": GND, "SH": GND},
+         sch=(50.8, 129.54), pcb=(92, 10, 180)),
     cap("C3", "10uF", VBUS, GND, sch=(91.44, 129.54), pcb=(78, 14, 90), fp=FP_C0805),
+    # The USB-A symbol's pins are power inputs, so mark the supplies as driven.
+    part("FLG2", "power:PWR_FLAG", "PWR_FLAG", "", {"1": VBUS},
+         sch=(91.44, 114.3), pcb=None),
+    part("FLG3", "power:PWR_FLAG", "PWR_FLAG", "", {"1": V5},
+         sch=(104.14, 66.04), pcb=None),
+    part("FLG4", "power:PWR_FLAG", "PWR_FLAG", "", {"1": GND},
+         sch=(76.2, 55.88), pcb=None),
 
     # ------------------------------------------------------- 3.3V LDO (XC6206)
     part("U2", "Regulator_Linear:XC6206PxxxMR", "XC6206P332MR",
          "Package_TO_SOT_SMD:SOT-23-3",
-         {"1": GND, "2": V3, "3": VBUS}, sch=(119.38, 129.54), pcb=(74, 34, 0),
+         {"1": GND, "2": V3, "3": V5}, sch=(119.38, 129.54), pcb=(74, 34, 0),
          lcsc="C5446"),
-    cap("C4", "1uF", VBUS, GND, sch=(139.7, 129.54), pcb=(68, 34, 90)),
+    cap("C4", "1uF", V5, GND, sch=(139.7, 129.54), pcb=(68, 34, 90)),
     cap("C5", "1uF", V3, GND, sch=(152.4, 129.54), pcb=(80, 34, 90)),
 
-    # ------------------------------------------------------------- STM32F103
-    part("U3", "MCU_ST_STM32F1:STM32F103C8Tx", "STM32F103C8T6",
-         "Package_QFP:LQFP-48_7x7mm_P0.5mm",
-         {"1": V3, "24": V3, "36": V3, "48": V3, "9": V3,
-          "23": GND, "35": GND, "47": GND, "8": GND,
-          "7": "NRST", "44": "BOOT0", "20": "BOOT1",
-          "5": "OSC_IN", "6": "OSC_OUT",
-          "32": "USB_DM", "33": "USB_DP",
-          "34": "SWDIO", "37": "SWCLK",
-          "2": "LED",
-          "18": "PUMP_CTRL", "19": "LAMP_CTRL"},
-         sch=(254, 101.6), pcb=(85, 48, 0), lcsc="C8734"),
-    cap("C6", "100nF", V3, GND, sch=(330.2, 45.72), pcb=(81, 41, 0)),
-    cap("C7", "100nF", V3, GND, sch=(342.9, 45.72), pcb=(91, 48, 90)),
-    cap("C8", "100nF", V3, GND, sch=(355.6, 45.72), pcb=(85, 55, 0)),
-    cap("C9", "100nF", V3, GND, sch=(368.3, 45.72), pcb=(79, 48, 90)),
-    cap("C10", "100nF", V3, GND, sch=(381, 45.72), pcb=(89, 41, 0)),
-    cap("C11", "4.7uF", V3, GND, sch=(393.7, 45.72), pcb=(86, 36, 0), fp=FP_C0805),
-    cap("C12", "100nF", "NRST", GND, sch=(330.2, 76.2), pcb=(76, 55, 90)),
-    res("R4", "10k", "BOOT0", GND, sch=(342.9, 76.2), pcb=(79, 58, 90)),
-    res("R5", "10k", "BOOT1", GND, sch=(355.6, 76.2), pcb=(82, 58, 90)),
-    # 1.5k USB D+ pull-up (full-speed device). Blue Pill boards often use 10k.
-    res("R6", "1.5k", "USB_DP", V3, sch=(368.3, 76.2), pcb=(92, 22, 90)),
+    # ------------------------------------------------------------- CH32X035
+    # USB clock comes from the internal 48MHz HSI: no crystal. In host mode
+    # the D+/D- 15k pull-downs are internal (GPIO_Mode_IPD), so none here.
+    # The G8U6 package has no NRST or BOOT pin. Program it over the 2-wire
+    # SDI debug port (DIO/DCK) with a WCH-LinkE.
+    part("U3", "MCU_WCH_RiscV:CH32X035G8U6", "CH32X035G8U6",
+         "Package_DFN_QFN:WQFN-28-1EP_4x4mm_P0.4mm_EP2.7x2.7mm",
+         {"2": V3, "29": GND,
+          "26": "USB_DM", "27": "USB_DP",
+          "25": "SWDIO", "24": "SWCLK",
+          "21": "UART_TX", "22": "UART_RX",
+          "5": "PUMP_CTRL", "6": "LAMP_CTRL", "7": "LED"},
+         sch=(254, 101.6), pcb=(85, 48, 0), lcsc="C7437027"),
+    cap("C6", "100nF", V3, GND, sch=(330.2, 45.72), pcb=(81, 43, 0)),
+    cap("C7", "4.7uF", V3, GND, sch=(342.9, 45.72), pcb=(81, 40, 0), fp=FP_C0805),
 
-    part("Y1", "Device:Crystal_GND24", "8MHz", "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
-         {"1": "OSC_IN", "2": GND, "3": "OSC_OUT", "4": GND},
-         sch=(342.9, 106.68), pcb=(72, 46, 90)),
-    cap("C13", "20pF", "OSC_IN", GND, sch=(330.2, 129.54), pcb=(69, 42, 90)),
-    cap("C14", "20pF", "OSC_OUT", GND, sch=(355.6, 129.54), pcb=(69, 50, 90)),
-
-    part("J3", "Connector_Generic:Conn_01x05", "SWD",
-         "Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
-         {"1": V3, "2": "SWDIO", "3": "SWCLK", "4": "NRST", "5": GND},
+    # Debug header: WCH-LinkE SDI plus USART1 (PB10 TX / PB11 RX) for logs,
+    # since the USB port is busy talking to the phone.
+    part("J3", "Connector_Generic:Conn_01x06", "SDI / UART",
+         "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical",
+         {"1": V3, "2": "SWDIO", "3": "SWCLK", "4": "UART_TX", "5": "UART_RX", "6": GND},
          sch=(381, 106.68), pcb=(99, 52, 0)),
 
     res("R7", "1k", V3, "LED_A", sch=(381, 129.54), pcb=(66, 60, 0)),
     part("D4", "Device:LED", "Green", "LED_SMD:LED_0603_1608Metric",
          {"1": "LED", "2": "LED_A"}, sch=(393.7, 129.54), pcb=(66, 64, 0)),
 
-    # ------------------------------------------------------ Pump output (PB0)
+    # ------------------------------------------------------ Pump output (PA0)
     res("R8", "100", "PUMP_CTRL", "PUMP_G", sch=(25.4, 190.5), pcb=(30, 46, 0)),
     res("R9", "10k", "PUMP_G", GND, sch=(38.1, 190.5), pcb=(30, 50, 90)),
     part("Q1", "Transistor_FET:AO3400A", "AO3400A", "Package_TO_SOT_SMD:SOT-23",
@@ -131,7 +127,7 @@ PARTS = [
          "TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",
          {"1": V12, "2": "PUMP_SW"}, sch=(101.6, 190.5), pcb=(9, 54, 90)),
 
-    # ------------------------------------------------------ Lamp output (PB1)
+    # ------------------------------------------------------ Lamp output (PA1)
     res("R10", "100", "LAMP_CTRL", "LAMP_G", sch=(25.4, 241.3), pcb=(46, 46, 0)),
     res("R11", "10k", "LAMP_G", GND, sch=(38.1, 241.3), pcb=(46, 50, 90)),
     part("Q2", "Transistor_FET:AO3400A", "AO3400A", "Package_TO_SOT_SMD:SOT-23",

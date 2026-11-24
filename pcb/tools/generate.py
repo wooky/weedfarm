@@ -209,8 +209,10 @@ def build_board():
             if num in p["pins"]:
                 pad.SetNet(net(p["pins"][num]))
             elif num in names:
-                # Match the name eeschema gives a no-connect pin's net.
-                label = "-".join(x for x in (p["ref"], names[num], "Pad" + num) if x)
+                # Match the name eeschema gives a no-connect pin's net, which
+                # escapes "/" in pin names (e.g. "PC15/CC2") as "{slash}".
+                pin = names[num].replace("/", "{slash}")
+                label = "-".join(x for x in (p["ref"], pin, "Pad" + num) if x)
                 pad.SetNet(net(f"unconnected-({label})", local=False))
 
     # Board outline.

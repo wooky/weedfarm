@@ -6,27 +6,31 @@ Replacement controller board for the VegeHome Jardin Pro. It mounts where the or
 
 - Designed in EasyEDA, then manufactured and assembled by JLCPCB.
 - Prefer JLCPCB basic parts where possible, to avoid extended-part setup fees.
-- The barrel jack and micro-USB connector are soldered by hand, not by JLCPCB.
+- The barrel jack and USB-A connector are soldered by hand, not by JLCPCB.
+- JLCPCB has no MCU in its basic library. The CH32X035G8U6 (C7437027) is an extended part, so it adds the extended-part setup fee.
 
 ## Power
 
 | Rail | Source | Feeds |
 |------|--------|-------|
 | 12V | DC adapter via barrel jack, through a reverse-polarity Schottky (SS54) | Pump; external lamp booster; buck regulator |
-| 5V | LM2596S-ADJ buck from 12V, set to about 5.3V | Micro-USB VBUS through a Schottky (SS34), so VBUS sits near 5V |
-| 3.3V | XC6206P332MR LDO from VBUS | STM32 |
+| 5V | LM2596S-ADJ buck from 12V, set to about 5.3V | 3.3V LDO; USB-A VBUS through a Schottky (SS34), so VBUS sits near 5V |
+| 3.3V | XC6206P332MR LDO from 5V | CH32X035 |
 
-The diode between 5V and VBUS stops a PC's VBUS from back-feeding the buck during DFU updates. Because the 3.3V LDO runs from VBUS, the MCU can be flashed over USB without the 12V adapter plugged in.
+The diode between 5V and VBUS drops the buck's 5.3V to about 5V and stops anything plugged into the USB port from back-feeding the buck. The board needs the 12V adapter to run, including while it's being programmed.
 
 ## Microcontroller
 
-- STM32F103C8T6: the cheapest MCU with USB available from JLCPCB.
-- USB full-speed device on PA11/PA12. Put a 1.5kΩ pull-up on D+ (PA12). Blue Pill boards often get this value wrong.
-- Programming:
-  - An SWD header (SWDIO, SWCLK, NRST, 3.3V, GND) for an ST-Link.
-  - Flash a USB DFU bootloader once over SWD. After that, update the firmware over the micro-USB port.
-  - The F103's ROM bootloader only supports UART, which is why the DFU bootloader is needed.
-- 8MHz HSE crystal, needed for the USB clock.
+- CH32X035G8U6 (WCH, RISC-V, 4x4mm QFN-28), about $0.54 at JLCPCB. It's the cheapest MCU found there with USB host support that needs no crystal.
+- No crystal. Per the datasheet, the USBFS module's 48MHz clock comes directly from the internal HSI.
+  - USB full-speed allows ±0.25% clock error. Check the HSI accuracy figure in the datasheet. If it's looser, the link depends on the phone's tolerance, so test with the actual phone, including at warm temperatures under the lamp.
+- USB full-speed **host** on PC16 (UDM) / PC17 (UDP). The 15kΩ D+/D- pull-downs are internal: WCH's host examples set the pins to input pull-down. No external USB resistors are fitted.
+- Pins: PA0 drives the pump, PA1 the lamp, and PA2 the status LED (active low). PC14/CC1 and PC15/CC2 (USB-PD) are unused.
+- Programming and debug: a 1x6 header (3.3V, DIO, DCK, TX, RX, GND).
+  - Flash over WCH's 2-wire SDI (PC18 DIO / PC19 DCK) with a WCH-LinkE.
+  - USART1 (PB10 TX / PB11 RX) for logs, since the USB port is in use by the phone.
+  - This package has no NRST or BOOT pin.
+- WCH's [EVT examples](https://github.com/openwch/ch32x035) include USBFS host code (`EVT/EXAM/USB/USBFS/HOST_*`) to start the firmware from.
 
 ## Loads
 
@@ -37,16 +41,15 @@ The diode between 5V and VBUS stops a PC's VBUS from back-feeding the buck durin
 
 ## USB / phone link
 
-- A single micro-USB connector does three jobs: data link to the phone, phone charging, and DFU firmware updates.
+- The board is the USB host and the phone is an ordinary USB device. A standard USB-A to phone cable plugs into the board's USB-A port.
+- The phone charges from VBUS while it's connected, because a phone in device mode charges like it does on any charger. This replaces the earlier ACA approach, which needed a custom cable with an ID resistor and support from the phone.
+- Data uses [Android Open Accessory (AOA)](https://source.android.com/docs/core/interaction/accessories/protocol). The board sends the AOA control requests, the phone re-enumerates as an accessory, and the Android app talks to it through the `UsbAccessory` API with bulk transfers. No root is needed.
 - The phone has a micro-USB port. The exact model hasn't been chosen.
 
 ## Open items
 
-- **Charging while connected:** the phone must act as USB host to talk to the STM32, but it also has to accept charge from the board. The leading option is the Accessory Charger Adapter (ACA) approach:
-  - The board supplies 5V on VBUS.
-  - The phone's ID pin is tied to ground through about 124kΩ (RID_A), which signals "host mode, charging allowed".
-  - A standard OTG cable grounds the ID pin directly, so this needs a custom cable or adapter that carries the resistor.
-  - Phone support for this varies. Test it on the chosen phone before committing to the design.
+- **Charging current:** without BC1.2 charging-downstream-port signaling, the phone will likely draw only about 500 mA. Shorting D+ to D- (dedicated-charger signaling) would break the data link. Check that 500 mA keeps the chosen phone charged with its normal usage, for example by plugging it into a PC USB 2.0 port with the screen on. If it doesn't, add a CDP controller.
+- **HSI accuracy in host mode:** see the Microcontroller section.
 - **Board outline:** still to be measured from the original Jardin Pro PCB. This includes the outline dimensions, mounting holes, and connector positions.
 - **Load currents:** measure the pump and lamp booster current draw, to size the MOSFETs, traces, and adapter.
 - **Part selection:** confirm the JLCPCB part numbers and stock for all components. The LCSC numbers in the sample design are unverified.
